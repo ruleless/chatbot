@@ -1,0 +1,57 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Flask (调试模式)",
+            "type": "python",
+            "request": "launch",
+            "module": "flask",
+            "env": {
+                "FLASK_APP": "web/app.py",
+                "FLASK_ENV": "development",
+                "FLASK_DEBUG": "1",
+            },
+            "args": [
+                "run",
+                "--no-debugger",
+                "--no-reload",
+                // "--without-threads",
+            ],
+            "jinja": true,
+            "justMyCode": true
+        },
+        {
+            "name": "Python: Flask (生产模式)",
+            "type": "python",
+            "request": "launch",
+            "module": "flask",
+            "env": {
+                "FLASK_APP": "web/app.py"
+            },
+            "args": [
+                "run"
+            ],
+            "jinja": true,
+            "justMyCode": true
+        },
+        {
+            "name": "Python: 当前文件 (调试模式)",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "args": [
+                "--debug"
+            ],
+            "justMyCode": true
+        },
+        {
+            "name": "Python: 当前文件 (生产模式)",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        }
+    ]
+}
