@@ -29,6 +29,7 @@ class WebApp:
         self.conversation_manager = ConversationManager(Config.MAX_HISTORY_LENGTH)
         self.current_model = None
         self.current_model_name = Config.DEFAULT_OLLAMA_MODEL
+        self.active_requests = {}  # 跟踪活跃请求
 
         # 注册路由
         self._register_routes()
@@ -219,6 +220,24 @@ class WebApp:
                 })
             except Exception as e:
                 logger.error(f"Failed to export conversation: {str(e)}")
+                return jsonify({"success": False, "error": str(e)}), 500
+
+        @self.app.route('/api/conversations/<conversation_id>/cancel', methods=['POST'])
+        def cancel_conversation(conversation_id):
+            """取消对话"""
+            try:
+                # 标记对话为已取消
+                if conversation_id in self.active_requests:
+                    self.active_requests[conversation_id] = "cancelled"
+                    logger.info(f"Conversation {conversation_id} marked for cancellation")
+                    return jsonify({"success": True})
+                else:
+                    return jsonify({
+                        "success": False,
+                        "error": "No active conversation found"
+                    }), 404
+            except Exception as e:
+                logger.error(f"Failed to cancel conversation: {str(e)}")
                 return jsonify({"success": False, "error": str(e)}), 500
 
         @self.app.errorhandler(404)
@@ -491,6 +510,9 @@ class WebApp:
             if not parsed_request["valid"]:
                 return parsed_request["response"], parsed_request["status"]
 
+            # 标记对话为活跃状态
+            self.active_requests[conversation_id] = "active"
+
             # 准备上下文
             context = self._prepare_chat_context(
                 conversation_id,
@@ -514,6 +536,10 @@ class WebApp:
         except Exception as e:
             logger.error(f"Chat request failed: {str(e)}")
             return jsonify({"success": False, "error": str(e)}), 500
+        finally:
+            # 清理活跃请求状态
+            if conversation_id in self.active_requests:
+                del self.active_requests[conversation_id]
 
 
 def create_app() -> WebApp:

@@ -6,6 +6,7 @@ class ChatApp {
         this.currentModel = null;
         this.conversations = [];
         this.isTyping = false;
+        this.currentAbortController = null;
 
         this.init();
     }
@@ -14,6 +15,9 @@ class ChatApp {
         this.bindEvents();
         this.loadModels();
         this.loadConversations();
+
+        // 初始化取消按钮状态
+        this.updateCancelButtonState();
 
         // 自动创建新对话
         this.createNewConversation();
@@ -56,6 +60,11 @@ class ChatApp {
         // 导出对话
         document.getElementById('exportBtn').addEventListener('click', () => {
             this.exportConversation();
+        });
+
+        // 取消对话
+        document.getElementById('cancelBtn').addEventListener('click', () => {
+            this.cancelConversation();
         });
 
         // 温度滑块
@@ -284,6 +293,12 @@ class ChatApp {
         this.showTypingIndicator();
         this.isTyping = true;
 
+        // 创建新的AbortController用于取消请求
+        this.currentAbortController = new AbortController();
+
+        // 更新取消按钮状态
+        this.updateCancelButtonState();
+
         const streaming = document.getElementById('streamingCheckbox').checked;
         const temperature = parseFloat(document.getElementById('temperatureSlider').value);
 
@@ -301,6 +316,8 @@ class ChatApp {
                 this.hideTypingIndicator();
             }
             this.isTyping = false;
+            this.currentAbortController = null;
+            this.updateCancelButtonState();
         }
     }
 
@@ -315,7 +332,8 @@ class ChatApp {
                 stream: false,
                 temperature: temperature,
                 max_tokens: 2000
-            })
+            }),
+            signal: this.currentAbortController.signal
         });
 
         const data = await response.json();
@@ -340,7 +358,8 @@ class ChatApp {
                 stream: true,
                 temperature: temperature,
                 max_tokens: 2000
-            })
+            }),
+            signal: this.currentAbortController.signal
         });
 
         if (!response.ok) {
@@ -415,6 +434,11 @@ class ChatApp {
                 }
             }
         } catch (error) {
+            if (error.name === 'AbortError') {
+                console.log('Stream request was aborted');
+                // 请求被取消时不显示错误消息
+                return;
+            }
             console.error('Stream reading error:', error);
             this.showError('流式输出错误: ' + error.message);
         }
@@ -604,6 +628,40 @@ class ChatApp {
         setTimeout(() => {
             toast.remove();
         }, 3000);
+    }
+
+    async cancelConversation() {
+        if (this.currentAbortController) {
+            // 先调用后端取消API
+            try {
+                await fetch(`/api/conversations/${this.currentConversationId}/cancel`, {
+                    method: 'POST'
+                });
+            } catch (error) {
+                console.error('Failed to cancel conversation on server:', error);
+            }
+
+            // 然后取消前端请求
+            this.currentAbortController.abort();
+            this.hideTypingIndicator();
+            this.isTyping = false;
+            this.currentAbortController = null;
+            this.updateCancelButtonState();
+            this.showSuccess('对话已取消');
+        }
+    }
+
+    updateCancelButtonState() {
+        const cancelBtn = document.getElementById('cancelBtn');
+        if (this.isTyping && this.currentAbortController) {
+            cancelBtn.disabled = false;
+            cancelBtn.classList.remove('btn-outline-secondary');
+            cancelBtn.classList.add('btn-outline-danger');
+        } else {
+            cancelBtn.disabled = true;
+            cancelBtn.classList.remove('btn-outline-danger');
+            cancelBtn.classList.add('btn-outline-secondary');
+        }
     }
 }
 
