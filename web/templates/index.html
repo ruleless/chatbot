@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ config.WEB_TITLE }}</title>
+    <link href="{{ url_for('static', filename='css/bootstrap.min.css') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/all.min.css') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+</head>
+<body>
+    <div class="container-fluid">
+        <div class="row">
+            <!-- 侧边栏 -->
+            <div class="col-md-3 sidebar">
+                <div class="sidebar-header">
+                    <h4><i class="fas fa-robot"></i> AI 聊天助手</h4>
+                </div>
+
+                <!-- 模型选择 -->
+                <div class="model-section">
+                    <h6>模型选择</h6>
+                    <select id="modelSelect" class="form-select form-select-sm mb-2">
+                        <option value="">加载中...</option>
+                    </select>
+                    <div id="modelStatus" class="model-status">
+                        <span class="badge bg-secondary">未选择</span>
+                    </div>
+                </div>
+
+                <!-- 对话列表 -->
+                <div class="conversation-section">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6>对话历史</h6>
+                        <button id="newConversationBtn" class="btn btn-sm btn-primary">
+                            <i class="fas fa-plus"></i> 新建
+                        </button>
+                    </div>
+                    <div id="conversationList" class="conversation-list">
+                        <div class="text-muted text-center">
+                            <small>暂无对话</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 系统提示设置 -->
+                <div class="system-prompt-section">
+                    <h6>系统提示</h6>
+                    <textarea id="systemPrompt" class="form-control" rows="3"
+                              placeholder="设置AI助手的角色和行为..."></textarea>
+                    <button id="updateSystemPromptBtn" class="btn btn-sm btn-outline-primary mt-2">
+                        更新提示
+                    </button>
+                </div>
+            </div>
+
+            <!-- 主聊天区域 -->
+            <div class="col-md-9 main-chat">
+                <!-- 聊天头部 -->
+                <div class="chat-header">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5 id="currentConversationTitle">新对话</h5>
+                        <div class="chat-actions">
+                            <button id="exportBtn" class="btn btn-sm btn-outline-secondary" title="导出对话">
+                                <i class="fas fa-download"></i>
+                            </button>
+                            <button id="clearBtn" class="btn btn-sm btn-outline-warning" title="清空对话">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 消息显示区域 -->
+                <div id="messageContainer" class="message-container">
+                    <div class="welcome-message">
+                        <h3><i class="fas fa-robot"></i> 欢迎使用 AI 聊天助手</h3>
+                        <p>请选择一个模型开始对话，或创建新的对话。</p>
+                    </div>
+                </div>
+
+                <!-- 输入区域 -->
+                <div class="input-area">
+                    <div class="input-group">
+                        <textarea id="messageInput" class="form-control"
+                                  placeholder="输入您的问题..." rows="2"></textarea>
+                        <button id="sendBtn" class="btn btn-primary">
+                            <i class="fas fa-paper-plane"></i>
+                        </button>
+                    </div>
+                    <div class="input-options">
+                        <div class="form-check form-check-inline">
+                            <input class="form-check-input" type="checkbox" id="streamingCheckbox" checked>
+                            <label class="form-check-label" for="streamingCheckbox">
+                                流式输出
+                            </label>
+                        </div>
+                        <div class="advanced-options">
+                            <small>温度: <input type="range" id="temperatureSlider" min="0" max="2" step="0.1" value="0.7" style="width: 100px;">
+                            <span id="temperatureValue">0.7</span></small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 加载模态框 -->
+    <div class="modal fade" id="loadingModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-sm">
+            <div class="modal-content">
+                <div class="modal-body text-center">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">加载中...</span>
+                    </div>
+                    <p class="mt-2 mb-0">AI 正在思考...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/bootstrap.bundle.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
