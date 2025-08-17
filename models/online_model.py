@@ -27,6 +27,8 @@ class OnlineModel(BaseModel):
         self.api_key = kwargs.get('api_key')
         self.base_url = base_url.rstrip('/')
         self.headers = self._build_headers()
+        self._availability_checked = False
+        self._is_available = False
 
     def _build_headers(self) -> Dict[str, str]:
         """
@@ -51,13 +53,20 @@ class OnlineModel(BaseModel):
 
     def is_available(self) -> bool:
         """
-        检查线上模型是否可用
+        检查线上模型是否可用（带缓存机制）
 
         Returns:
             bool: 模型是否可用
         """
+        # 如果已经检查过可用性，直接返回缓存结果
+        if self._availability_checked:
+            return self._is_available
+
+        # 基本检查：API密钥是否存在
         if not self.api_key:
             logger.warning(f"No API key provided for {self.provider}")
+            self._availability_checked = True
+            self._is_available = False
             return False
 
         try:
@@ -75,7 +84,9 @@ class OnlineModel(BaseModel):
                     headers=self.headers,
                     timeout=10
                 )
-                return response.status_code == 200
+                self._availability_checked = True
+                self._is_available = response.status_code == 200
+                return self._is_available
 
             elif self.provider == "gemini":
                 # Gemini的API格式不同
@@ -87,13 +98,24 @@ class OnlineModel(BaseModel):
                     },
                     timeout=10
                 )
-                return response.status_code == 200
+                self._availability_checked = True
+                self._is_available = response.status_code == 200
+                return self._is_available
 
+            self._availability_checked = True
+            self._is_available = False
             return False
 
         except Exception as e:
             logger.error(f"{self.provider} model availability check failed: {str(e)}")
+            self._availability_checked = True
+            self._is_available = False
             return False
+
+    def reset_availability_cache(self):
+        """重置可用性缓存，强制重新检查"""
+        self._availability_checked = False
+        self._is_available = False
 
     def get_model_info(self) -> Dict[str, Any]:
         """
@@ -186,6 +208,8 @@ class OnlineModel(BaseModel):
 
         except Exception as e:
             logger.error(f"{self.provider} chat request failed: {str(e)}")
+            # 如果API调用失败，重置可用性缓存
+            self.reset_availability_cache()
             return create_error_response(f"Request failed: {str(e)}")
 
     def _chat_openai_style(
@@ -226,6 +250,8 @@ class OnlineModel(BaseModel):
                     "model": result.get("model", self.model_name)
                 })
         else:
+            # API调用失败，重置可用性缓存
+            self.reset_availability_cache()
             error_response = response.json().get("error", {})
             error_msg = error_response.get("message", f"API error: {response.status_code}")
             return create_error_response(error_msg)
@@ -269,6 +295,8 @@ class OnlineModel(BaseModel):
             else:
                 return create_error_response("No response content from Gemini")
         else:
+            # API调用失败，重置可用性缓存
+            self.reset_availability_cache()
             error_response = response.json().get("error", {})
             error_msg = error_response.get("message", f"API error: {response.status_code}")
             return create_error_response(error_msg)
@@ -315,6 +343,8 @@ class OnlineModel(BaseModel):
 
         except Exception as e:
             logger.error(f"{self.provider} stream chat request failed: {str(e)}")
+            # 如果API调用失败，重置可用性缓存
+            self.reset_availability_cache()
             error_msg = f"Stream request failed: {str(e)}"
             error_response = create_error_response(error_msg)
             yield json.dumps(error_response, ensure_ascii=False)

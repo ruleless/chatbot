@@ -369,60 +369,85 @@ class WebApp:
                     temperature=temperature,
                     max_tokens=max_tokens
                 ):
-                    # 检查是否是JSON错误响应
-                    try:
-                        data = json.loads(chunk)
-                        if isinstance(data, dict):
-                            if "success" in data and not data["success"]:
-                                error_json = json.dumps(
-                                    data,
-                                    ensure_ascii=False
-                                )
-                                yield f"data: {error_json}\n\n"
-                                return
-                            elif "content" in data:
-                                content = data["content"]
-                                full_response += content
-                                content_json = json.dumps(
-                                    {'content': content},
-                                    ensure_ascii=False
-                                )
-                                yield f"data: {content_json}\n\n"
-                    except json.JSONDecodeError:
-                        # 如果不是JSON格式，直接作为内容处理
-                        full_response += chunk
-                        content_json = json.dumps(
-                            {'content': chunk},
-                            ensure_ascii=False
-                        )
-                        yield f"data: {content_json}\n\n"
+                    # 处理每个数据块
+                    result = self._process_stream_chunk(chunk, full_response)
+                    if result.get("is_error"):
+                        yield result["response"]
+                        return
+
+                    if result.get("is_complete"):
+                        full_response = result["full_response"]
+                        yield result["response"]
+                    else:
+                        full_response = result["full_response"]
+                        yield result["response"]
 
                 # 添加助手回复到对话历史
-                if full_response.strip():
-                    self.conversation_manager.add_message(
-                        context["conversation_id"],
-                        "assistant",
-                        full_response
-                    )
+                self._save_assistant_response(context["conversation_id"], full_response)
 
-                done_json = json.dumps(
-                    {'done': True},
-                    ensure_ascii=False
-                )
-                yield f"data: {done_json}\n\n"
+                # 发送完成信号
+                yield self._create_stream_response({'done': True})
 
             except Exception as e:
-                error_msg = {"success": False, "error": str(e)}
-                error_json = json.dumps(
-                    error_msg,
-                    ensure_ascii=False
+                yield self._create_stream_response(
+                    {"success": False, "error": str(e)}
                 )
-                yield f"data: {error_json}\n\n"
 
         return self.app.response_class(
             generate_stream(),
             mimetype='text/event-stream'
         )
+
+    def _process_stream_chunk(self, chunk: str, full_response: str) -> Dict[str, Any]:
+        """处理流式数据块"""
+        try:
+            data = json.loads(chunk)
+
+            if not isinstance(data, dict):
+                return self._create_content_response(chunk, full_response)
+
+            if "success" in data and not data["success"]:
+                return {
+                    "is_error": True,
+                    "response": self._create_stream_response(data)
+                }
+
+            if "content" in data:
+                content = data["content"]
+                updated_response = full_response + content
+                return {
+                    "is_complete": True,
+                    "full_response": updated_response,
+                    "response": self._create_stream_response({'content': content})
+                }
+
+            return self._create_content_response(chunk, full_response)
+
+        except json.JSONDecodeError:
+            return self._create_content_response(chunk, full_response)
+
+    def _create_content_response(self, content: str, full_response: str) -> Dict[str, Any]:
+        """创建内容响应"""
+        updated_response = full_response + content
+        return {
+            "is_complete": False,
+            "full_response": updated_response,
+            "response": self._create_stream_response({'content': content})
+        }
+
+    def _create_stream_response(self, data: Dict[str, Any]) -> str:
+        """创建流式响应格式"""
+        json_data = json.dumps(data, ensure_ascii=False)
+        return f"data: {json_data}\n\n"
+
+    def _save_assistant_response(self, conversation_id: str, response: str):
+        """保存助手回复到对话历史"""
+        if response.strip():
+            self.conversation_manager.add_message(
+                conversation_id,
+                "assistant",
+                response
+            )
 
     def _handle_non_streaming_response(self, context: Dict[str, Any],
                                      temperature: float, max_tokens: int):
