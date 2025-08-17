@@ -13,20 +13,18 @@ from utils.helpers import create_error_response, create_success_response
 class OnlineModel(BaseModel):
     """线上模型实现类"""
 
-    def __init__(self, provider: str, model_name: str, api_key: str, base_url: str, **kwargs):
+    def __init__(self, model_name: str, base_url: str, **kwargs):
         """
         初始化线上模型
 
         Args:
-            provider: 服务提供商 (deepseek, gemini, openai)
             model_name: 模型名称
-            api_key: API密钥
             base_url: API基础URL
-            **kwargs: 其他配置参数
+            **kwargs: 其他配置参数，包括 provider 和 api_key
         """
         super().__init__(model_name, **kwargs)
-        self.provider = provider
-        self.api_key = api_key
+        self.provider = kwargs.get('provider')
+        self.api_key = kwargs.get('api_key')
         self.base_url = base_url.rstrip('/')
         self.headers = self._build_headers()
 
@@ -361,15 +359,15 @@ class OnlineModel(BaseModel):
         for line in response.iter_lines():
             if not line:
                 continue
-                
+
             line_text = line.decode('utf-8')
             if not line_text.startswith("data: "):
                 continue
-                
+
             data_str = line_text[6:]  # 移除 "data: " 前缀
             if data_str == "[DONE]":
                 break
-                
+
             content = self._extract_content_from_stream_data(data_str)
             if content:
                 yield content
@@ -380,7 +378,7 @@ class OnlineModel(BaseModel):
             data = json.loads(data_str)
             if "choices" not in data or len(data["choices"]) == 0:
                 return None
-                
+
             delta = data["choices"][0].get("delta", {})
             return delta.get("content", "")
         except json.JSONDecodeError:

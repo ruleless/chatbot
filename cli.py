@@ -97,13 +97,17 @@ Type directly to chat with AI.
                     base_url=model_config["base_url"]
                 )
             elif model_config["type"] == "online":
+                # 创建在线模型实例，避免参数重复传递
+                model_kwargs = {
+                    "provider": model_config["provider"],
+                    "api_key": model_config["api_key"],
+                    "base_url": model_config["base_url"],
+                    "model": model_config["model"]
+                }
                 self.current_model = ModelFactory.create_model(
                     "online",
-                    model_name,
-                    provider=model_config["provider"],
-                    api_key=model_config["api_key"],
-                    base_url=model_config["base_url"],
-                    model=model_config["model"]
+                    model_config["model"],  # 使用实际的模型名称而不是provider名称
+                    **model_kwargs
                 )
 
             if not self.current_model:

@@ -241,7 +241,7 @@ class WebApp:
         port = port or Config.PORT
 
         # 使用 HTTP/1.1 协议运行应用
-        self.app.run(host=host, port=port, threaded=True)
+        self.app.run(host=host, port=port)
 
     def _validate_model_name(self, model_name: str) -> bool:
         """验证模型名称是否有效"""
@@ -269,13 +269,17 @@ class WebApp:
                 base_url=model_config["base_url"]
             )
         elif model_config["type"] == "online":
+            # 创建在线模型实例，避免参数重复传递
+            model_kwargs = {
+                "provider": model_config["provider"],
+                "api_key": model_config["api_key"],
+                "base_url": model_config["base_url"],
+                "model": model_config["model"]
+            }
             self.current_model = ModelFactory.create_model(
                 "online",
-                model_name,
-                provider=model_config["provider"],
-                api_key=model_config["api_key"],
-                base_url=model_config["base_url"],
-                model=model_config["model"]
+                model_config["model"],  # 使用实际的模型名称而不是provider名称
+                **model_kwargs
             )
 
         if not self.current_model:
