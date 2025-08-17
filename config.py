@@ -10,7 +10,7 @@ class Config:
 
     # 基础配置
     APP_NAME = "AI ChatBot"
-    DEBUG = True
+    DEBUG = False
     HOST = "127.0.0.1"
     PORT = 5000
 

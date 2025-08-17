@@ -241,13 +241,20 @@ class ChatApp {
 
     addMessageToUI(role, content, timestamp = null) {
         const container = document.getElementById('messageContainer');
+
+        // 移除欢迎消息（如果存在）
+        const welcomeMessage = container.querySelector('.welcome-message');
+        if (welcomeMessage) {
+            welcomeMessage.remove();
+        }
+
         const messageDiv = document.createElement('div');
         messageDiv.className = `message ${role}`;
 
         const timeStr = timestamp ? this.formatTimestamp(timestamp) : this.getCurrentTimestamp();
 
         messageDiv.innerHTML = `
-            <div class="message-bubble">${this.escapeHtml(content)}</div>
+            <div class="message-bubble">${this.formatMessageWithLineBreaks(content)}</div>
             <div class="message-timestamp">${timeStr}</div>
         `;
 
@@ -289,7 +296,10 @@ class ChatApp {
         } catch (error) {
             this.showError('发送消息失败: ' + error.message);
         } finally {
-            this.hideTypingIndicator();
+            // 对于流式消息，隐藏指示器的操作已经在sendStreamMessage中处理
+            if (!streaming) {
+                this.hideTypingIndicator();
+            }
             this.isTyping = false;
         }
     }
@@ -312,7 +322,8 @@ class ChatApp {
 
         if (data.success) {
             this.addMessageToUI('assistant', data.response);
-            this.loadConversations();
+            // 更新对话列表但不重新加载当前对话
+            this.updateConversationList();
         } else {
             this.showError(data.error);
         }
@@ -340,17 +351,32 @@ class ChatApp {
         const decoder = new TextDecoder();
         let assistantMessage = '';
 
-        // 创建消息容器
+        // 先移除输入指示器
+        this.hideTypingIndicator();
+
+        // 创建消息容器 - 确保在正确的位置添加
         const container = document.getElementById('messageContainer');
+
+        // 移除欢迎消息（如果存在）
+        const welcomeMessage = container.querySelector('.welcome-message');
+        if (welcomeMessage) {
+            welcomeMessage.remove();
+        }
+
         const messageDiv = document.createElement('div');
         messageDiv.className = 'message assistant';
+        const timestamp = this.getCurrentTimestamp();
+        const uniqueId = 'streamingMessage_' + Date.now();
         messageDiv.innerHTML = `
-            <div class="message-bubble" id="streamingMessage"></div>
-            <div class="message-timestamp">${this.getCurrentTimestamp()}</div>
+            <div class="message-bubble" id="${uniqueId}"></div>
+            <div class="message-timestamp">${timestamp}</div>
         `;
-        container.appendChild(messageDiv);
 
-        const messageElement = document.getElementById('streamingMessage');
+        // 确保消息添加到容器的最后位置
+        container.appendChild(messageDiv);
+        this.scrollToBottom();
+
+        const messageElement = document.getElementById(uniqueId);
 
         try {
             while (true) {
@@ -373,12 +399,13 @@ class ChatApp {
 
                             if (data.content) {
                                 assistantMessage += data.content;
-                                messageElement.textContent = assistantMessage;
+                                messageElement.innerHTML = this.formatMessageWithLineBreaks(assistantMessage);
                                 this.scrollToBottom();
                             }
 
                             if (data.done) {
-                                this.loadConversations();
+                                // 更新对话列表但不重新加载当前对话
+                                this.updateConversationList();
                                 return;
                             }
                         } catch (e) {
@@ -532,6 +559,12 @@ class ChatApp {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    formatMessageWithLineBreaks(text) {
+        // 先转义HTML，然后将换行符转换为 <br> 标签
+        const escapedText = this.escapeHtml(text);
+        return escapedText.replace(/\n/g, '<br>');
     }
 
     showError(message) {

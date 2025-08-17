@@ -178,107 +178,7 @@ class WebApp:
         @self.app.route('/api/conversations/<conversation_id>/chat', methods=['POST'])
         def chat(conversation_id):
             """发送聊天请求"""
-            try:
-                if not self.current_model:
-                    return jsonify({
-                        "success": False,
-                        "error": "No model selected"
-                    }), 400
-
-                data = request.get_json()
-                message = data.get('message', '').strip()
-                stream = data.get('stream', False)
-                temperature = float(data.get('temperature', Config.DEFAULT_TEMPERATURE))
-                max_tokens = int(data.get('max_tokens', Config.DEFAULT_MAX_TOKENS))
-
-                if not message:
-                    return jsonify({
-                        "success": False,
-                        "error": "Message cannot be empty"
-                    }), 400
-
-                # 清理输入
-                message = sanitize_input(message)
-
-                # 获取对话历史
-                messages = self.conversation_manager.get_conversation_messages(conversation_id)
-                if not messages:
-                    # 如果对话不存在，创建新对话
-                    conversation_id = self.conversation_manager.create_conversation()
-                    # 创建空的消息列表，但不需要传递给模型，因为这是第一条消息
-                    messages = []
-
-                # 添加用户消息
-                self.conversation_manager.add_message(conversation_id, "user", message)
-
-                # 获取系统提示
-                conversation = self.conversation_manager.get_conversation(conversation_id)
-                system_prompt = conversation.get("system_prompt", Config.DEFAULT_SYSTEM_PROMPT)
-
-                # 发送请求到模型
-                if stream:
-                    # 流式响应
-                    def generate_stream():
-                        try:
-                            full_response = ""
-                            for chunk in self.current_model.chat_stream(
-                                messages=messages,
-                                system_prompt=system_prompt,
-                                temperature=temperature,
-                                max_tokens=max_tokens
-                            ):
-                                # 检查是否是JSON错误响应
-                                try:
-                                    error_data = json.loads(chunk)
-                                    if "success" in error_data and not error_data["success"]:
-                                        yield f"data: {json.dumps(error_data, ensure_ascii=False)}\n\n"
-                                        return
-                                except json.JSONDecodeError:
-                                    pass
-
-                                full_response += chunk
-                                yield f"data: {json.dumps({'content': chunk}, ensure_ascii=False)}\n\n"
-
-                            # 添加助手回复到对话历史
-                            if full_response.strip():
-                                self.conversation_manager.add_message(conversation_id, "assistant", full_response)
-
-                            yield f"data: {json.dumps({'done': True}, ensure_ascii=False)}\n\n"
-
-                        except Exception as e:
-                            error_msg = {"success": False, "error": str(e)}
-                            yield f"data: {json.dumps(error_msg, ensure_ascii=False)}\n\n"
-
-                    return self.app.response_class(
-                        generate_stream(),
-                        mimetype='text/event-stream'
-                    )
-                else:
-                    # 非流式响应
-                    response = self.current_model.chat(
-                        messages=messages,
-                        system_prompt=system_prompt,
-                        temperature=temperature,
-                        max_tokens=max_tokens,
-                        stream=False
-                    )
-
-                    if response["success"]:
-                        # 添加助手回复到对话历史
-                        assistant_response = response["data"]["content"]
-                        self.conversation_manager.add_message(conversation_id, "assistant", assistant_response)
-
-                        return jsonify({
-                            "success": True,
-                            "response": assistant_response,
-                            "conversation_id": conversation_id
-                        })
-                    else:
-                        return jsonify(response), 500
-
-            except Exception as e:
-                logger.error(f"Chat request failed: {str(e)}")
-                return jsonify({"success": False, "error": str(e)}), 500
+            return self._handle_chat_request(conversation_id)
 
         @self.app.route('/api/conversations/<conversation_id>/system-prompt', methods=['PUT'])
         def update_system_prompt(conversation_id):
@@ -335,19 +235,18 @@ class WebApp:
                 "error": "Internal server error"
             }), 500
 
-    def run(self, host: str = None, port: int = None, debug: bool = None):
+    def run(self, host: str = None, port: int = None):
         """运行Web应用"""
         host = host or Config.HOST
         port = port or Config.PORT
-        debug = debug if debug is not None else Config.DEBUG
 
-        logger.info(f"Starting web server on {host}:{port}")
-        self.app.run(host=host, port=port, debug=debug)
-    
+        # 使用 HTTP/1.1 协议运行应用
+        self.app.run(host=host, port=port, threaded=True)
+
     def _validate_model_name(self, model_name: str) -> bool:
         """验证模型名称是否有效"""
         return validate_model_name(model_name, Config.get_available_models())
-    
+
     def _create_model_instance(self, model_name: str) -> Dict[str, Any]:
         """创建模型实例"""
         # 获取模型配置
@@ -361,7 +260,7 @@ class WebApp:
                 },
                 "status": 400
             }
-        
+
         # 创建模型实例
         if model_config["type"] == "ollama":
             self.current_model = ModelFactory.create_model(
@@ -378,7 +277,7 @@ class WebApp:
                 base_url=model_config["base_url"],
                 model=model_config["model"]
             )
-        
+
         if not self.current_model:
             return {
                 "success": False,
@@ -388,9 +287,9 @@ class WebApp:
                 },
                 "status": 500
             }
-        
+
         return {"success": True}
-    
+
     def _parse_chat_request(self) -> Dict[str, Any]:
         """解析聊天请求"""
         data = request.get_json()
@@ -398,7 +297,7 @@ class WebApp:
         stream = data.get('stream', False)
         temperature = float(data.get('temperature', Config.DEFAULT_TEMPERATURE))
         max_tokens = int(data.get('max_tokens', Config.DEFAULT_MAX_TOKENS))
-        
+
         if not message:
             return {
                 "valid": False,
@@ -408,7 +307,7 @@ class WebApp:
                 },
                 "status": 400
             }
-        
+
         return {
             "valid": True,
             "message": sanitize_input(message),
@@ -416,23 +315,29 @@ class WebApp:
             "temperature": temperature,
             "max_tokens": max_tokens
         }
-    
+
     def _prepare_chat_context(self, conversation_id: str, message: str) -> Dict[str, Any]:
         """准备聊天上下文"""
-        # 获取对话历史
-        messages = self.conversation_manager.get_conversation_messages(
-            conversation_id
-        )
-        if not messages:
+        # 检查对话是否存在
+        conversation = self.conversation_manager.get_conversation(conversation_id)
+        if not conversation:
             # 如果对话不存在，创建新对话
             conversation_id = self.conversation_manager.create_conversation()
             messages = []
-        
+        else:
+            # 获取对话历史
+            messages = conversation["messages"]
+
         # 添加用户消息
         self.conversation_manager.add_message(
             conversation_id, "user", message
         )
-        
+
+        # 重新获取包含最新用户消息的完整对话历史
+        messages = self.conversation_manager.get_conversation_messages(
+            conversation_id
+        )
+
         # 获取系统提示
         conversation = self.conversation_manager.get_conversation(
             conversation_id
@@ -441,13 +346,13 @@ class WebApp:
             "system_prompt",
             Config.DEFAULT_SYSTEM_PROMPT
         )
-        
+
         return {
             "conversation_id": conversation_id,
             "messages": messages,
             "system_prompt": system_prompt
         }
-    
+
     def _handle_streaming_response(self, context: Dict[str, Any],
                                  temperature: float, max_tokens: int):
         """处理流式响应"""
@@ -462,25 +367,32 @@ class WebApp:
                 ):
                     # 检查是否是JSON错误响应
                     try:
-                        error_data = json.loads(chunk)
-                        if ("success" in error_data and
-                            not error_data["success"]):
-                            error_json = json.dumps(
-                                error_data,
-                                ensure_ascii=False
-                            )
-                            yield f"data: {error_json}\n\n"
-                            return
+                        data = json.loads(chunk)
+                        if isinstance(data, dict):
+                            if "success" in data and not data["success"]:
+                                error_json = json.dumps(
+                                    data,
+                                    ensure_ascii=False
+                                )
+                                yield f"data: {error_json}\n\n"
+                                return
+                            elif "content" in data:
+                                content = data["content"]
+                                full_response += content
+                                content_json = json.dumps(
+                                    {'content': content},
+                                    ensure_ascii=False
+                                )
+                                yield f"data: {content_json}\n\n"
                     except json.JSONDecodeError:
-                        pass
-                    
-                    full_response += chunk
-                    content_json = json.dumps(
-                        {'content': chunk},
-                        ensure_ascii=False
-                    )
-                    yield f"data: {content_json}\n\n"
-                
+                        # 如果不是JSON格式，直接作为内容处理
+                        full_response += chunk
+                        content_json = json.dumps(
+                            {'content': chunk},
+                            ensure_ascii=False
+                        )
+                        yield f"data: {content_json}\n\n"
+
                 # 添加助手回复到对话历史
                 if full_response.strip():
                     self.conversation_manager.add_message(
@@ -488,13 +400,13 @@ class WebApp:
                         "assistant",
                         full_response
                     )
-                
+
                 done_json = json.dumps(
                     {'done': True},
                     ensure_ascii=False
                 )
                 yield f"data: {done_json}\n\n"
-                
+
             except Exception as e:
                 error_msg = {"success": False, "error": str(e)}
                 error_json = json.dumps(
@@ -502,12 +414,12 @@ class WebApp:
                     ensure_ascii=False
                 )
                 yield f"data: {error_json}\n\n"
-        
+
         return self.app.response_class(
             generate_stream(),
             mimetype='text/event-stream'
         )
-    
+
     def _handle_non_streaming_response(self, context: Dict[str, Any],
                                      temperature: float, max_tokens: int):
         """处理非流式响应"""
@@ -518,7 +430,7 @@ class WebApp:
             max_tokens=max_tokens,
             stream=False
         )
-        
+
         if response["success"]:
             # 添加助手回复到对话历史
             assistant_response = response["data"]["content"]
@@ -527,7 +439,7 @@ class WebApp:
                 "assistant",
                 assistant_response
             )
-            
+
             return jsonify({
                 "success": True,
                 "response": assistant_response,
@@ -536,12 +448,48 @@ class WebApp:
         else:
             return jsonify(response), 500
 
+    def _handle_chat_request(self, conversation_id: str):
+        """处理聊天请求"""
+        try:
+            if not self.current_model:
+                return jsonify({
+                    "success": False,
+                    "error": "No model selected"
+                }), 400
+
+            # 解析请求
+            parsed_request = self._parse_chat_request()
+            if not parsed_request["valid"]:
+                return parsed_request["response"], parsed_request["status"]
+
+            # 准备上下文
+            context = self._prepare_chat_context(
+                conversation_id,
+                parsed_request["message"]
+            )
+
+            # 根据请求类型处理响应
+            if parsed_request["stream"]:
+                return self._handle_streaming_response(
+                    context,
+                    parsed_request["temperature"],
+                    parsed_request["max_tokens"]
+                )
+            else:
+                return self._handle_non_streaming_response(
+                    context,
+                    parsed_request["temperature"],
+                    parsed_request["max_tokens"]
+                )
+
+        except Exception as e:
+            logger.error(f"Chat request failed: {str(e)}")
+            return jsonify({"success": False, "error": str(e)}), 500
+
 
 def create_app() -> WebApp:
     """创建Web应用实例"""
     return WebApp()
 
 
-if __name__ == '__main__':
-    app = create_app()
-    app.run()
+app = create_app().app

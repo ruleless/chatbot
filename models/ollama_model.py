@@ -193,13 +193,36 @@ class OllamaModel(BaseModel):
                     continue
 
                 try:
-                    data = json.loads(line.decode('utf-8'))
+                    line_str = line.decode('utf-8').strip()
+                    if not line_str:
+                        continue
+
+                    data = json.loads(line_str)
                     content = self._extract_content_from_stream_data(data)
+
+                    # 如果是错误响应，直接返回错误信息
+                    if isinstance(data, dict) and data.get("success") == False:
+                        error_json = json.dumps({
+                            "success": False,
+                            "error": data.get("error", "Unknown error")
+                        }, ensure_ascii=False)
+                        yield error_json
+                        return
+
                     if content:  # 只返回非空内容
-                        yield content
+                        # 将内容包装在正确的格式中
+                        content_json = json.dumps({
+                            "content": content
+                        }, ensure_ascii=False)
+                        yield content_json
+
                 except json.JSONDecodeError as e:
                     warning_msg = f"Failed to parse stream data: {str(e)}"
                     logger.warning(warning_msg)
+                    continue
+                except Exception as e:
+                    error_msg = f"Error processing stream data: {str(e)}"
+                    logger.error(error_msg)
                     continue
 
         except Exception as e:
@@ -220,8 +243,20 @@ class OllamaModel(BaseModel):
         Returns:
             Optional[str]: 提取的内容，如果没有则返回None
         """
-        message = data.get("message", {})
-        return message.get("content") if isinstance(message, dict) else None
+        try:
+            # 确保data是字典类型
+            if not isinstance(data, dict):
+                return None
+
+            message = data.get("message", {})
+            if not isinstance(message, dict):
+                return None
+
+            content = message.get("content")
+            return content if content and isinstance(content, str) else None
+        except Exception as e:
+            logger.error(f"Error extracting content from stream data: {str(e)}")
+            return None
 
     def get_available_models(self) -> List[str]:
         """
